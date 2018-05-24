@@ -1,0 +1,32 @@
+{
+  "name": "xiaovbao_auth",
+  "version": "0.1.0",
+  "description": "xiaovbao auth",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "rm -rf dist && tsc && node dist/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mizne/xiaovbao_auth.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.18.0",
+    "koa": "^2.5.0",
+    "koa-body": "^2.5.0",
+    "koa-router": "^7.4.0",
+    "ramda": "^0.25.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^7.2.6",
+    "@types/koa": "^2.0.45",
+    "@types/koa-router": "^7.0.28",
+    "@types/node": "^9.6.6",
+    "@types/ramda": "^0.25.24",
+    "typescript": "^2.8.3"
+  }
+}
