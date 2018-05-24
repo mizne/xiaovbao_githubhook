@@ -19,7 +19,8 @@
     "koa": "^2.5.0",
     "koa-body": "^2.5.0",
     "koa-router": "^7.4.0",
-    "ramda": "^0.25.0"
+    "ramda": "^0.25.0",
+    "shelljs": "^0.8.2"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^7.2.6",
@@ -27,6 +28,7 @@
     "@types/koa-router": "^7.0.28",
     "@types/node": "^9.6.6",
     "@types/ramda": "^0.25.24",
+    "@types/shelljs": "^0.8.0",
     "typescript": "^2.8.3"
   }
 }
