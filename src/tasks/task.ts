@@ -15,162 +15,241 @@ const sentryProjectMap: { [key: string]: string } = {
   'ex-show-web': 'exshow'
 }
 
+export interface UploadSentryTaskOptions {
+  projectName: string
+  jsUrlPrefix: string
+  localJsMapRelateDistDir: string
+}
+
+export interface UploadSentryOptions extends UploadSentryTaskOptions {
+  version: string
+  repositoryDir: string
+}
+
+export interface NormalizedParams {
+  projectName: string
+  needUploadSourceMapToSentry: boolean
+  jsUrlPrefix: string
+  localJsMapRelateDistDir: string
+  destDistDir: string
+  repositoryDir: string
+  repositoryDistDir: string
+}
+
 // TODO 某些步骤容易出错 加上重试机制 譬如pull from github容易失败
 export class Task {
-  private destDistDir: string
-  private repositoryDir: string
-  private repositoryDistDir: string
-  private version: string
-  constructor(
-    private projectName: string,
-    private needUploadSourceMapToSentry?: boolean,
-    private jsUrlPrefix?: string, // http://exshow.xiaovbao.cn/static/js
-    private localJsMapRelateDistDir?: string // dist/static/js
-  ) {
-    this.destDistDir = path.join(
+  constructor(private options: string | UploadSentryTaskOptions) {}
+
+  async run() {
+    const params = this.resolveOptions(this.options)
+
+    try {
+      shell.echo(`run task staring!!! project name: ${params.projectName}`)
+      const version = await this.pullFromGithub(
+        params.projectName,
+        params.repositoryDir
+      )
+      await this.runInstall(params.projectName, params.repositoryDir)
+      await this.runBuild(params.projectName, params.repositoryDir)
+      this.copyToDestination(
+        params.projectName,
+        params.repositoryDistDir,
+        params.destDistDir
+      )
+      if (params.needUploadSourceMapToSentry) {
+        await this.uploadSourceMapToSentry({
+          ...(this.options as UploadSentryTaskOptions),
+          repositoryDir: params.repositoryDir,
+          version
+        })
+      }
+      shell.echo(`run task success!!! project name: ${params.projectName}`)
+    } catch (e) {
+      shell.echo(
+        `run task failed; error: ${e.message}; project name: ${
+          params.projectName
+        }!`
+      )
+    }
+  }
+
+  private resolveOptions(
+    opt: string | UploadSentryTaskOptions
+  ): NormalizedParams {
+    const projectName =
+      typeof this.options === 'string' ? this.options : this.options.projectName
+    const needUploadSourceMapToSentry = typeof this.options !== 'string'
+    const jsUrlPrefix =
+      typeof this.options !== 'string' ? this.options.jsUrlPrefix : ''
+    const localJsMapRelateDistDir =
+      typeof this.options !== 'string'
+        ? this.options.localJsMapRelateDistDir
+        : ''
+
+    const destDistDir = path.join(
       frontEndDir,
       repositoryMap[projectName] + '/dist'
     )
-    this.repositoryDir = path.join(
+    const repositoryDir = path.join(
       frontEndDir,
       repositoryMap[projectName],
       'repository',
       projectName
     )
-    this.repositoryDistDir = path.join(this.repositoryDir, 'dist')
-    console.log(`destDistDir: ${this.destDistDir}`)
-    console.log(`repositoryDir: ${this.repositoryDir}`)
-    console.log(`repositoryDistDir: ${this.repositoryDistDir}`)
-  }
+    const repositoryDistDir = path.join(repositoryDir, 'dist')
 
-  async run() {
-    try {
-      shell.echo(`run task staring!!! project name: ${this.projectName}`)
-      await this.pullFromGithub()
-      await this.runInstall()
-      await this.runBuild()
-      this.copyToDestination()
-      if (this.needUploadSourceMapToSentry) {
-        await this.uploadSourceMapToSentry()
-      }
-      shell.echo(`run task success!!! project name: ${this.projectName}`)
-    } catch (e) {
-      console.log(`run task failed; error: ${e.message}`)
+    return {
+      projectName,
+      needUploadSourceMapToSentry,
+      jsUrlPrefix,
+      localJsMapRelateDistDir,
+      destDistDir,
+      repositoryDir,
+      repositoryDistDir
     }
   }
 
-  private pullFromGithub(): Promise<void> {
+  private pullFromGithub(
+    projectName: string,
+    repositoryDir: string
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
-      shell.echo(`start pull from github, project name: ${this.projectName}`)
-      shell.cd(this.repositoryDir)
+      shell.echo(`start pull from github, project name: ${projectName}`)
+      shell.cd(repositoryDir)
       shell.exec(`git pull origin master master`, code => {
         if (code === 0) {
           const packageJson = fs.readFileSync(
-            this.repositoryDir + '/package.json',
+            repositoryDir + '/package.json',
             'utf-8'
           )
-          this.version = JSON.parse(packageJson).version
-          console.log(
-            `fetch package version from ${this.repositoryDir}; version: ${
-              this.version
-            }`
+          const version = JSON.parse(packageJson).version
+          shell.echo(
+            `fetch package version from ${repositoryDir}; version: ${version}`
           )
           shell.echo(`git pull success`)
-          resolve()
+          resolve(version)
         } else {
-          console.log(
-            `pull from github failed; project name: ${this.projectName};`
-          )
           reject(
-            new Error(
-              `pull from github failed; project name: ${this.projectName};`
-            )
+            new Error(`pull from github failed; project name: ${projectName};`)
           )
         }
       })
     })
   }
 
-  private runInstall(): Promise<void> {
+  private runInstall(
+    projectName: string,
+    repositoryDir: string
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
-      shell.echo(`start npm install, project name: ${this.projectName}`)
-      shell.cd(this.repositoryDir)
+      shell.echo(`start npm install, project name: ${projectName}`)
+      shell.cd(repositoryDir)
       shell.exec(`npm install`, code => {
         if (code === 0) {
           shell.echo(`npm install success`)
           resolve()
         } else {
-          reject(
-            new Error(`npm install failed; project name: ${this.projectName};`)
-          )
+          reject(new Error(`npm install failed; project name: ${projectName};`))
         }
       })
     })
   }
 
-  private runBuild() {
+  private runBuild(projectName: string, repositoryDir: string) {
     return new Promise((resolve, reject) => {
-      shell.echo(`start npm run build, project name: ${this.projectName}`)
-      shell.cd(this.repositoryDir)
+      shell.echo(`start npm run build, project name: ${projectName}`)
+      shell.cd(repositoryDir)
       shell.exec(`npm run build`, code => {
         if (code === 0) {
           shell.echo(`npm run build success`)
           resolve()
         } else {
           reject(
-            new Error(
-              `npm run build failed; project name: ${this.projectName};`
-            )
+            new Error(`npm run build failed; project name: ${projectName};`)
           )
         }
       })
     })
   }
 
-  private copyToDestination() {
+  private copyToDestination(
+    projectName: string,
+    repositoryDistDir: string,
+    destDistDir: string
+  ) {
     shell.echo(`start copy build dist to destination dist dir`)
-    shell.rm('-rf', this.destDistDir + '/*')
-    shell.cp('-R', this.repositoryDistDir + '/*', this.destDistDir)
-    console.log(
-      `copy build dist to destination dist dir success; project name: ${
-        this.projectName
-      };`
+    shell.rm('-rf', destDistDir + '/*')
+    shell.cp('-R', repositoryDistDir + '/*', destDistDir)
+    shell.echo(
+      `copy build dist to destination dist dir success; project name: ${projectName};`
     )
   }
 
-  private uploadSourceMapToSentry(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      shell.echo(
-        `start upload source map to sentry; project name: ${this.projectName}`
-      )
+  private async uploadSourceMapToSentry({
+    projectName,
+    version,
+    repositoryDir,
+    jsUrlPrefix,
+    localJsMapRelateDistDir
+  }: UploadSentryOptions) {
+    if (!version) {
+      throw new Error(`upload source map to sentry need version`)
+    }
+    shell.echo(
+      `start upload source map to sentry; project name: ${projectName}`
+    )
+    await this.sentryReleaseVersion(projectName, version).then(() =>
+      this.uploadSourceMap({
+        projectName,
+        version,
+        repositoryDir,
+        jsUrlPrefix,
+        localJsMapRelateDistDir
+      })
+    )
+    shell.echo(
+      `upload source map to sentry success!!! project name: ${projectName}!!!`
+    )
+  }
 
-      if (!this.version) {
-        throw new Error(`upload source map to sentry need version`)
-      }
+  private sentryReleaseVersion(
+    projectName: string,
+    version: string
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
       shell.exec(
         `sentry-cli releases -o ${sentryOrganizer} -p ${
-          sentryProjectMap[this.projectName]
-        } new ${this.version}`,
-        releaseCode => {
-          if (releaseCode === 0) {
-            shell.cd(this.repositoryDir)
-            shell.exec(
-              `sentry-cli releases -o ${sentryOrganizer} -p ${
-                sentryProjectMap[this.projectName]
-              } files ${this.version} upload-sourcemaps --url-prefix ${
-                this.jsUrlPrefix
-              } ${this.localJsMapRelateDistDir}`,
-              uploadCode => {
-                if (uploadCode === 0) {
-                  console.log(`upload source map to sentry success!!!`)
-                  resolve()
-                } else {
-                  reject(new Error(`upload source map to sentry failed;`))
-                }
-              }
-            )
+          sentryProjectMap[projectName]
+        } new ${version}`,
+        code => {
+          if (code === 0) {
+            resolve()
           } else {
-            reject(new Error(`sentry-cli releases new version failed;`))
+            reject(new Error(`sentry releases version failed!!!`))
+          }
+        }
+      )
+    })
+  }
+
+  private uploadSourceMap({
+    projectName,
+    version,
+    repositoryDir,
+    jsUrlPrefix,
+    localJsMapRelateDistDir
+  }: UploadSentryOptions): Promise<void> {
+    return new Promise((resolve, reject) => {
+      shell.cd(repositoryDir)
+      shell.exec(
+        `sentry-cli releases -o ${sentryOrganizer} -p ${
+          sentryProjectMap[projectName]
+        } files ${version} upload-sourcemaps --url-prefix ${jsUrlPrefix} ${localJsMapRelateDistDir}`,
+        code => {
+          if (code === 0) {
+            resolve()
+          } else {
+            reject(new Error(`upload source map to sentry failed;`))
           }
         }
       )
