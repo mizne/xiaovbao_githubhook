@@ -1,7 +1,7 @@
 {
-  "name": "xiaovbao_auth",
+  "name": "xiaovbao_githubhook",
   "version": "0.1.0",
-  "description": "xiaovbao auth",
+  "description": "xiaovbao github hook",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mizne/xiaovbao_auth.git"
+    "url": "https://github.com/mizne/xiaovbao_githubhook.git"
   },
   "keywords": [],
   "author": "",
