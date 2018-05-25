@@ -1,5 +1,6 @@
 import * as shell from 'shelljs'
 import * as path from 'path'
+import * as fs from 'fs'
 
 // github project name vs local folder name
 const repositoryMap: { [key: string]: string } = {
@@ -35,15 +36,15 @@ export class Task {
     console.log(`repositoryDistDir: ${this.repositoryDistDir}`)
   }
 
-  run() {
+  async run() {
     try {
       shell.echo(`run task staring!!! project name: ${this.projectName}`)
-      this.pullFromGithub()
-      this.runInstall()
-      this.runBuild()
+      await this.pullFromGithub()
+      await this.runInstall()
+      await this.runBuild()
       this.copyToDestination()
       if (this.needUploadSourceMapToSentry) {
-        this.uploadSourceMapToSentry()
+        await this.uploadSourceMapToSentry()
       }
       shell.echo(`run task success!!! project name: ${this.projectName}`)
     } catch (e) {
@@ -51,45 +52,54 @@ export class Task {
     }
   }
 
-  private pullFromGithub() {
-    shell.echo(`start pull from github, project name: ${this.projectName}`)
-    shell.cd(this.repositoryDir)
-    const pullResult = shell.exec(`git pull origin master master`)
-
-    if (pullResult.code === 0) {
-      const packageJson = require(this.repositoryDir + '/package.json')
-      this.version = packageJson.version
-      console.log(`fetch package version from ${this.repositoryDir}; version: ${this.version}`)
-      shell.echo(`git pull success`)
-      return true
-    } else {
-      console.log(`pull from github failed; project name: ${this.projectName};`)
-      throw new Error(`pull from github failed; project name: ${this.projectName};`)
-    }
+  private pullFromGithub(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      shell.echo(`start pull from github, project name: ${this.projectName}`)
+      shell.cd(this.repositoryDir)
+      shell.exec(`git pull origin master master`, (code) => {
+        if (code === 0) {
+          const packageJson = fs.readFileSync(this.repositoryDir + '/package.json', 'utf-8')
+          this.version = JSON.parse(packageJson).version
+          console.log(`fetch package version from ${this.repositoryDir}; version: ${this.version}`)
+          shell.echo(`git pull success`)
+          resolve()
+        } else {
+          console.log(`pull from github failed; project name: ${this.projectName};`)
+          reject(new Error(`pull from github failed; project name: ${this.projectName};`))
+        }
+      })
+    })
   }
 
-  private runInstall() {
-    shell.echo(`start npm install, project name: ${this.projectName}`)
-    shell.cd(this.repositoryDir)
-    const installResult = shell.exec(`npm install`)
-    if (installResult.code === 0) {
-      shell.echo(`npm install success`)
-      return true
-    } else {
-      throw new Error(`npm install failed; project name: ${this.projectName};`)
-    }
+  private runInstall(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      shell.echo(`start npm install, project name: ${this.projectName}`)
+      shell.cd(this.repositoryDir)
+      shell.exec(`npm install`, (code) => {
+        if (code === 0) {
+          shell.echo(`npm install success`)
+          resolve()
+        } else {
+          reject(new Error(`npm install failed; project name: ${this.projectName};`))
+        }
+      })
+    })
   }
 
   private runBuild() {
-    shell.echo(`start npm run build, project name: ${this.projectName}`)
-    shell.cd(this.repositoryDir)
-    const buildResult = shell.exec(`npm run build`)
-    if (buildResult.code === 0) {
-      shell.echo(`npm run build success`)
-      return true
-    } else {
-      throw new Error(`npm run build failed; project name: ${this.projectName};`)
-    }
+    return new Promise((resolve, reject) => {
+      shell.echo(`start npm run build, project name: ${this.projectName}`)
+      shell.cd(this.repositoryDir)
+      shell.exec(`npm run build`, (code) => {
+        if (code === 0) {
+          shell.echo(`npm run build success`)
+          resolve()
+        } else {
+          reject(new Error(`npm run build failed; project name: ${this.projectName};`))
+        }
+      })
+
+    })
   }
 
   private copyToDestination() {
@@ -97,25 +107,31 @@ export class Task {
     shell.rm('-rf', this.destDistDir + '/*')
     shell.cp('-R', this.repositoryDistDir + '/*', this.destDistDir)
     console.log(`copy build dist to destination dist dir success; project name: ${this.projectName};`)
-    return true
-
   }
 
-  private uploadSourceMapToSentry() {
-    shell.echo(`start upload source map to sentry; project name: ${this.projectName}`)
+  private uploadSourceMapToSentry(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      shell.echo(`start upload source map to sentry; project name: ${this.projectName}`)
 
-    if (!this.version) {
-      throw new Error(`upload source map to sentry need version`)
-    }
-    const newReleaseResult = shell.exec(`sentry-cli releases -o ${sentryOrganizer} -p ${sentryProjectMap[this.projectName]} new ${this.version}`)
-    if (newReleaseResult.code === 0) {
-      shell.cd(this.repositoryDir)
-      const uploadResult = shell.exec(`sentry-cli releases -o ${sentryOrganizer} -p ${sentryProjectMap[this.projectName]} files ${this.version} upload-sourcemaps --url-prefix ${this.jsUrlPrefix} ${this.localJsMapRelateDistDir}`)
-      if (uploadResult.code === 0) {
-        console.log(`upload source map to sentry success!!!`)
-        return true
+      if (!this.version) {
+        throw new Error(`upload source map to sentry need version`)
       }
-      throw new Error(`upload source map to sentry failed;`)
-    }
+      shell.exec(`sentry-cli releases -o ${sentryOrganizer} -p ${sentryProjectMap[this.projectName]} new ${this.version}`, (releaseCode) => {
+        if (releaseCode === 0) {
+          shell.cd(this.repositoryDir)
+          shell.exec(`sentry-cli releases -o ${sentryOrganizer} -p ${sentryProjectMap[this.projectName]} files ${this.version} upload-sourcemaps --url-prefix ${this.jsUrlPrefix} ${this.localJsMapRelateDistDir}`, (uploadCode) => {
+            if (uploadCode === 0) {
+              console.log(`upload source map to sentry success!!!`)
+              resolve()
+            } else {
+              reject(new Error(`upload source map to sentry failed;`))
+            }
+          })
+        } else {
+          reject(new Error(`sentry-cli releases new version failed;`))
+        }
+      })
+
+    })
   }
 }
