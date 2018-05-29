@@ -1,6 +1,7 @@
 import * as shell from 'shelljs'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as moment from 'moment'
 import { frontEndDir } from '../../config/config'
 
 // github project name vs local folder name
@@ -44,7 +45,7 @@ export class Task {
     const params = this.resolveOptions(this.options)
 
     try {
-      shell.echo(`run task staring!!! project name: ${params.projectName}`)
+      shell.echo(`run task staring!!! project name: ${params.projectName}! time: ${moment().format('YYYY-MM-DD HH:mm:ss')}`)
       const version = await this.pullFromGithub(
         params.projectName,
         params.repositoryDir
@@ -63,12 +64,12 @@ export class Task {
           version
         })
       }
-      shell.echo(`run task success!!! project name: ${params.projectName}`)
+      shell.echo(`run task success!!! project name: ${params.projectName}! time: ${moment().format('YYYY-MM-DD HH:mm:ss')}`)
     } catch (e) {
       shell.echo(
-        `run task failed; error: ${e.message}; project name: ${
+        `run task failed!!! error: ${e.message}; project name: ${
           params.projectName
-        }!`
+        }! time: ${moment().format('YYYY-MM-DD HH:mm:ss')}`
       )
     }
   }
